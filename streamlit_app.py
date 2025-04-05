@@ -251,4 +251,49 @@ def main():
         with tab1:
             st.subheader("Manage Parking Lots")
             
-            for name, info in CAMPUS_P
+            for name, info in CAMPUS_PARKING.items():
+                with st.expander(name):
+                    current = st.session_state.parking_data[name]["occupied"]
+                    new_val = st.number_input(
+                        "Occupied spots",
+                        min_value=0,
+                        max_value=info["capacity"],
+                        value=current,
+                        key=f"admin_{name}"
+                    )
+                    
+                    if st.button(f"Update {name}", key=f"update_{name}"):
+                        st.session_state.parking_data[name]["occupied"] = new_val
+                        st.session_state.parking_data[name]["last_updated"] = datetime.now()
+                        st.success("Updated successfully!")
+                        time.sleep(0.5)
+                        st.rerun()
+        
+        with tab2:
+            st.subheader("Parking Analytics")
+            
+            # Sample data visualization
+            data = []
+            for name, info in CAMPUS_PARKING.items():
+                data.append({
+                    "Lot": name,
+                    "Capacity": info["capacity"],
+                    "Occupied": st.session_state.parking_data[name]["occupied"],
+                    "Utilization": st.session_state.parking_data[name]["occupied"] / info["capacity"] * 100
+                })
+            
+            df = pd.DataFrame(data)
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.bar_chart(df, x="Lot", y=["Capacity", "Occupied"])
+            with col2:
+                st.metric("Total Campus Capacity", sum(info["capacity"] for info in CAMPUS_PARKING.values()))
+                st.metric("Current Utilization", f"{sum(data['Occupied'] for data in df)/sum(data['Capacity'] for data in df)*100:.1f}%")
+
+    # Footer
+    st.markdown("---")
+    st.caption("© 2023 University Campus Parking System | v1.0")
+
+if __name__ == "__main__":
+    main()
