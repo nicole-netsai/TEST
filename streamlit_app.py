@@ -139,7 +139,7 @@ def main():
 
     # Sidebar
     with st.sidebar:
-        st.image("https://imgv2-2-f.scribdassets.com/img/document/521652459/original/8d3676f42e/1669288241?v=1", width=150)
+        st.image("https://cdn1.iconfinder.com/data/icons/higher-education/66/5-1024.png", width=150)
         st.title("Campus Parking")
         
         view_options = {
