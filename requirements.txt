@@ -4,4 +4,7 @@ tensorflow
 numpy
 pandas
 Pillow
-app-model
+random
+time
+datetime
+plotly.express 
