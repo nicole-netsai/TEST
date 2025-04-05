@@ -1,93 +1,254 @@
 import streamlit as st
-import cv2
-import numpy as np
-from datetime import datetime
+import random
 import time
+from datetime import datetime
 import pandas as pd
+import plotly.express as px
 
+# App Configuration
+st.set_page_config(
+    page_title="Campus Smart Parking",
+    page_icon="🚗",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-
-# Database simulation
-parking_data = {
-    lot_name: {
-        "total": lot["capacity"],
-        "occupied": random.randint(int(lot["capacity"]*0.5), int(lot["capacity"]*0.8)),
-        "last_updated": datetime.now()
-    } for lot_name, lot in PARKING_LOTS.items()
+# University Parking Data
+CAMPUS_PARKING = {
+    "Main Gate Lot": {
+        "capacity": 120,
+        "rate": "3.50/hr",
+        "location": "Near Main Entrance",
+        "coords": (37.7749, -122.4194),
+        "special": "Visitor Parking"
+    },
+    "Science Complex Garage": {
+        "capacity": 200,
+        "rate": "2.75/hr",
+        "location": "Behind Science Bldg",
+        "coords": (37.7755, -122.4180),
+        "special": "Faculty Preferred"
+    },
+    "Student Union Lot": {
+        "capacity": 180,
+        "rate": "2.00/hr",
+        "location": "Next to Student Center",
+        "coords": (37.7735, -122.4210),
+        "special": "Student Permits"
+    },
+    "Athletics Field Parking": {
+        "capacity": 150,
+        "rate": "3.00/hr",
+        "location": "Near Sports Complex",
+        "coords": (37.7760, -122.4200),
+        "special": "Event Parking"
+    }
 }
 
+# Initialize Session State
+if 'parking_data' not in st.session_state:
+    st.session_state.parking_data = {
+        name: {
+            "occupied": random.randint(int(info["capacity"]*0.4), int(info["capacity"]*0.8)),
+            "last_updated": datetime.now(),
+            "reservations": []
+        } 
+        for name, info in CAMPUS_PARKING.items()
+    }
+
+# UI Components
+def show_parking_map():
+    """Interactive campus parking map"""
+    map_data = []
+    for name, info in CAMPUS_PARKING.items():
+        available = info["capacity"] - st.session_state.parking_data[name]["occupied"]
+        map_data.append({
+            "Lot": name,
+            "Latitude": info["coords"][0],
+            "Longitude": info["coords"][1],
+            "Available": available,
+            "Capacity": info["capacity"],
+            "Rate": info["rate"],
+            "Status": "🟢 Good" if available > 20 else "🟡 Limited" if available > 0 else "🔴 Full"
+        })
+    
+    df = pd.DataFrame(map_data)
+    fig = px.scatter_mapbox(
+        df,
+        lat="Latitude",
+        lon="Longitude",
+        hover_name="Lot",
+        hover_data=["Available", "Capacity", "Rate", "Status"],
+        color="Status",
+        zoom=15,
+        height=500,
+        mapbox_style="open-street-map"
+    )
+    fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
+    st.plotly_chart(fig, use_container_width=True)
+
+def parking_lot_card(name, info):
+    """UI card for each parking lot"""
+    occupied = st.session_state.parking_data[name]["occupied"]
+    available = info["capacity"] - occupied
+    
+    with st.container(border=True):
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            st.subheader(name)
+            st.caption(f"📍 {info['location']}")
+            st.caption(f"🎯 {info['special']}")
+        with col2:
+            st.metric("Available", f"{available}/{info['capacity']}")
+        
+        # Visual indicators
+        progress_val = available/info["capacity"]
+        if progress_val > 0.3:
+            st.progress(progress_val, f"{int(progress_val*100)}% available")
+        else:
+            st.progress(progress_val, "Limited spaces!", )
+        
+        # Action buttons
+        btn_col1, btn_col2 = st.columns(2)
+        with btn_col1:
+            if st.button("🔍 View Details", key=f"view_{name}"):
+                st.session_state.selected_lot = name
+                st.session_state.current_view = "detail"
+                st.rerun()
+        with btn_col2:
+            if st.button("🗺️ Get Directions", key=f"dir_{name}"):
+                st.session_state.show_directions = name
+                st.rerun()
+
+# Main App
 def main():
-    st.set_page_config(page_title="Smart Parking System", layout="wide")
-    st.title("University Campus Parking Management")
-    st.markdown("---")
-    
-    # Sidebar navigation
-    st.sidebar.header("Navigation")
-    app_mode = st.sidebar.selectbox("Choose a view", 
-                                  ["Parking Availability", "Find Parking", "Reserve & Pay", "Admin Dashboard"])
-    
-    if app_mode == "Parking Availability":
-        show_parking_availability()
-    elif app_mode == "Find Parking":
-        show_find_parking()
-    elif app_mode == "Reserve & Pay":
-        show_reserve_pay()
-    elif app_mode == "Admin Dashboard":
-        show_admin_dashboard()
+    # Custom CSS
+    st.markdown("""
+    <style>
+    .stProgress > div > div > div > div {
+        background-color: #4CAF50;
+    }
+    .lot-card {
+        border-radius: 10px;
+        padding: 15px;
+        margin-bottom: 15px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
-def show_parking_availability():
-    st.header("Real-time Parking Availability")
-    
-    cols = st.columns(len(PARKING_LOTS))
-    for idx, (lot_name, lot) in enumerate(PARKING_LOTS.items()):
-        with cols[idx]:
-            show_lot_status(lot_name, lot)
-    
-    st.subheader("Campus Parking Map")
-    show_campus_map()
-
-def show_lot_status(lot_name, lot):
-    st.subheader(lot_name)
-    
-    # Get video frame
-    frame, _ = ParkingUtils.get_video_frame(lot["video"], int(time.time()) % 30)
-    st.image(frame, caption=f"Live feed: {lot_name}", use_column_width=True)
-    
-    # Process with VGG16 model
-    with st.spinner("Analyzing parking spots..."):
-        vacant = parking_model.predict_vacancy(frame)
-    
-    # Update parking data
-    if vacant:
-        parking_data[lot_name]["occupied"] = max(0, parking_data[lot_name]["occupied"] - 1)
-    else:
-        parking_data[lot_name]["occupied"] = min(
-            lot["capacity"], 
-            parking_data[lot_name]["occupied"] + 1
+    # Sidebar
+    with st.sidebar:
+        st.image("https://via.placeholder.com/150x50?text=University+Logo", width=150)
+        st.title("Campus Parking")
+        
+        view_options = {
+            "map": "🗺️ Parking Map",
+            "list": "📋 All Parking Lots", 
+            "reserve": "🅿️ Reserve Spot",
+            "admin": "🔒 Admin Portal"
+        }
+        
+        current_view = st.radio(
+            "Navigation",
+            options=list(view_options.values()),
+            index=0,
+            key="current_view"
         )
-    parking_data[lot_name]["last_updated"] = datetime.now()
-    
-    # Display info
-    available = parking_data[lot_name]["total"] - parking_data[lot_name]["occupied"]
-    st.metric("Available Spots", value=available)
-    st.progress(available / parking_data[lot_name]["total"])
-    
-    if st.button(f"Directions to {lot_name}"):
-        st.markdown(f"[Open in Google Maps]({ParkingUtils.get_google_maps_direction(lot['coords'])})", 
-                   unsafe_allow_html=True)
+        
+        st.markdown("---")
+        st.caption(f"Last Updated: {datetime.now().strftime('%m/%d %I:%M %p')}")
 
-def show_campus_map():
-    markers = "&".join([
-        f"markers=color:{'green' if (parking_data[lot]['total'] - parking_data[lot]['occupied']) > 5 else 'orange' if (parking_data[lot]['total'] - parking_data[lot]['occupied']) > 0 else 'red'}"
-        f"%7C{data['coords'][0]},{data['coords'][1]}"
-        for lot, data in PARKING_LOTS.items()
-    ])
-    
-    map_url = f"https://maps.googleapis.com/maps/api/staticmap?center={CAMPUS_COORDINATES[0]},{CAMPUS_COORDINATES[1]}&zoom=16&size=800x400&maptype=roadmap&{markers}&key={GOOGLE_MAPS_API_KEY}"
-    st.image(map_url, use_column_width=True)
-    st.caption("Green: Available, Orange: Limited, Red: Full")
+    # Main Content Area
+    if current_view == view_options["map"]:
+        st.header("Campus Parking Map")
+        show_parking_map()
+        
+        if st.session_state.get("show_directions"):
+            lot = st.session_state.show_directions
+            st.info(f"Directions to {lot}: {CAMPUS_PARKING[lot]['location']}")
+            # Embedded Google Maps would go here
+            st.map(pd.DataFrame({
+                "lat": [CAMPUS_PARKING[lot]["coords"][0]],
+                "lon": [CAMPUS_PARKING[lot]["coords"][1]]
+            }), zoom=16)
+            
+            if st.button("Close Directions"):
+                st.session_state.show_directions = None
+                st.rerun()
 
-# [Other functions (show_find_parking, show_reserve_pay, show_admin_dashboard) would be implemented similarly]
+    elif current_view == view_options["list"]:
+        st.header("All Parking Facilities")
+        
+        search = st.text_input("Search parking lots", key="parking_search")
+        
+        filtered_lots = {
+            name: info for name, info in CAMPUS_PARKING.items() 
+            if search.lower() in name.lower() or search.lower() in info["location"].lower()
+        }
+        
+        for name, info in filtered_lots.items():
+            parking_lot_card(name, info)
 
-if __name__ == "__main__":
-    main()
+    elif current_view == view_options["reserve"]:
+        st.header("Reserve Parking Spot")
+        
+        selected = st.selectbox(
+            "Select parking lot",
+            options=list(CAMPUS_PARKING.keys()),
+            index=0,
+            key="reserve_lot"
+        )
+        
+        info = CAMPUS_PARKING[selected]
+        occupied = st.session_state.parking_data[selected]["occupied"]
+        available = info["capacity"] - occupied
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.subheader(selected)
+            st.image("https://via.placeholder.com/500x300?text=Lot+"+selected.replace(" ", "+"), 
+                    use_column_width=True)
+        with col2:
+            st.metric("Available Spots", available)
+            st.caption(f"Total Capacity: {info['capacity']}")
+            st.write(f"**Rate:** {info['rate']}")
+            st.write(f"**Location:** {info['location']}")
+            st.write(f"**Special:** {info['special']}")
+            
+            if available > 0:
+                with st.form(key="reservation_form"):
+                    st.selectbox("Permit Type", ["Student", "Faculty", "Visitor", "Event"])
+                    st.text_input("Vehicle License Plate")
+                    st.time_input("Estimated Arrival Time")
+                    
+                    if st.form_submit_button("Reserve Spot", type="primary"):
+                        st.session_state.parking_data[selected]["occupied"] += 1
+                        st.session_state.parking_data[selected]["reservations"].append({
+                            "time": datetime.now(),
+                            "plate": "ABC123",  # Would come from form
+                            "user": "Current User"  # Would be authenticated user
+                        })
+                        st.success("Reservation confirmed!")
+                        time.sleep(1)
+                        st.rerun()
+            else:
+                st.error("No available spots in this lot")
+
+    elif current_view == view_options["admin"]:
+        st.header("Admin Portal")
+        
+        # Simple auth
+        password = st.text_input("Enter admin password", type="password")
+        if password != "campus123":
+            st.error("Incorrect password")
+            st.stop()
+        
+        st.success("Admin access granted")
+        
+        tab1, tab2 = st.tabs(["Parking Status", "Analytics"])
+        
+        with tab1:
+            st.subheader("Manage Parking Lots")
+            
+            for name, info in CAMPUS_P
