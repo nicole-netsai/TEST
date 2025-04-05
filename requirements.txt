@@ -4,4 +4,4 @@ tensorflow
 numpy
 pandas
 Pillow
-app.models
+app-model
