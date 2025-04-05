@@ -4,12 +4,10 @@ import numpy as np
 from datetime import datetime
 import time
 import pandas as pd
-from app-model import ParkingModel
 from app.utils import ParkingUtils
 from app.config import PARKING_LOTS, ADMIN_CREDENTIALS, GOOGLE_MAPS_API_KEY
 
-# Initialize parking model
-parking_model = ParkingModel()
+
 
 # Database simulation
 parking_data = {
