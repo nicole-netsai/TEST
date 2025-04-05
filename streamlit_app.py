@@ -7,7 +7,7 @@ import plotly.express as px
 
 # App Configuration
 st.set_page_config(
-    page_title="Campus Smart Parking",
+    page_title="University of Zimbabwe Smart Parking System",
     page_icon="🚗",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -15,30 +15,30 @@ st.set_page_config(
 
 # University Parking Data
 CAMPUS_PARKING = {
-    "Main Gate Lot": {
-        "capacity": 120,
-        "rate": "3.50/hr",
+    "Great Hall": {
+        "capacity": 31,
+        "rate": "0.70/hr",
         "location": "Near Main Entrance",
         "coords": (37.7749, -122.4194),
-        "special": "Visitor Parking"
+        "special": "Visitor Parking/ Great Hall Candidates"
     },
-    "Science Complex Garage": {
+    "Faculty of Science": {
         "capacity": 200,
-        "rate": "2.75/hr",
-        "location": "Behind Science Bldg",
+        "rate": "1.00/hr",
+        "location": "MLT and SLT Buildings",
         "coords": (37.7755, -122.4180),
-        "special": "Faculty Preferred"
+        "special": "Reserved for Students and Lecturers"
     },
     "Student Union Lot": {
-        "capacity": 180,
-        "rate": "2.00/hr",
+        "capacity": 40,
+        "rate": "1.00/hr",
         "location": "Next to Student Center",
         "coords": (37.7735, -122.4210),
         "special": "Student Permits"
     },
     "Athletics Field Parking": {
         "capacity": 150,
-        "rate": "3.00/hr",
+        "rate": "1.50/hr",
         "location": "Near Sports Complex",
         "coords": (37.7760, -122.4200),
         "special": "Event Parking"
@@ -139,7 +139,7 @@ def main():
 
     # Sidebar
     with st.sidebar:
-        st.image("https://via.placeholder.com/150x50?text=University+Logo", width=150)
+        st.image("https://imgv2-2-f.scribdassets.com/img/document/521652459/original/8d3676f42e/1669288241?v=1", width=150)
         st.title("Campus Parking")
         
         view_options = {
