@@ -113,6 +113,7 @@ for name in parking_locations:  # Or whatever your data structure is
     btn_col1, btn_col2 = st.columns(2)
     with btn_col1:
         if st.button("🔍 View Details", key=f"view_{name}"):
+            
 btn_col1, btn_col2 = st.columns(2)
 with btn_col1:
     if st.button("🔍 View Details", key=f"view_{name}"):
