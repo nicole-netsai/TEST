@@ -109,16 +109,81 @@ def parking_lot_card(name, info):
             st.progress(progress_val, "Limited spaces!", )
         
         # Action buttons
-        btn_col1, btn_col2 = st.columns(2)
-        with btn_col1:
-            if st.button("🔍 View Details", key=f"view_{name}"):
-                st.session_state.selected_lot = name
-                st.session_state.current_view = "detail"
-                st.rerun()
-        with btn_col2:
-            if st.button("🗺️ Get Directions", key=f"dir_{name}"):
-                st.session_state.show_directions = name
-                st.rerun()
+btn_col1, btn_col2 = st.columns(2)
+with btn_col1:
+    if st.button("🔍 View Details", key=f"view_{name}"):
+        st.session_state.selected_lot = name
+        st.session_state.current_view = "detail"
+        
+        # Show detailed information
+        with st.container():
+            st.subheader(f"Parking Lot: {name}")
+            
+            # Display status with color coding
+            status = "Vacant" if random.random() > 0.5 else "Occupied"
+            status_color = "green" if status == "Vacant" else "red"
+            st.markdown(f"**Status:** <span style='color:{status_color}'>{status}</span>", 
+                       unsafe_allow_html=True)
+            
+            # Display location details
+            st.write(f"**Location:** {parking_locations[name]['description']}")
+            
+            # Estimated time calculation
+            st.subheader("Estimated Travel Time")
+            current_location = st.text_input("Enter your current location:", 
+                                          "Current Campus Building")
+            
+            if st.button("Calculate Travel Time"):
+                # In a real implementation, you would use Google Maps API
+                # Here's a mock implementation
+                travel_time = random.randint(5, 15)
+                st.success(f"Estimated driving time: {travel_time} minutes")
+                
+                # Display route visualization (mock)
+                st.image("https://maps.googleapis.com/maps/api/staticmap?" +
+                       f"center={parking_locations[name]['lat']},{parking_locations[name]['lng']}" +
+                       "&zoom=15&size=600x300&maptype=roadmap" +
+                       "&markers=color:red%7C{current_location}" +
+                       f"&markers=color:green%7C{parking_locations[name]['lat']},{parking_locations[name]['lng']}" +
+                       "&path=color:0x0000ff80|weight:5" +
+                       f"|{current_location}|{parking_locations[name]['lat']},{parking_locations[name]['lng']}" +
+                       f"&key={GOOGLE_MAPS_API_KEY}",
+                       caption="Suggested Route")
+
+with btn_col2:
+    if st.button("🗺️ Get Directions", key=f"dir_{name}"):
+        # Generate Google Maps directions URL
+        directions_url = (f"https://www.google.com/maps/dir/?api=1"
+                         f"&origin=Current+Location"
+                         f"&destination={parking_locations[name]['lat']},{parking_locations[name]['lng']}"
+                         f"&travelmode=driving")
+        
+        # Open in new tab
+        st.markdown(f"""
+        <a href="{directions_url}" target="_blank">
+            <button style="
+                background-color: #4285F4;
+                color: white;
+                padding: 0.5em 1em;
+                border: none;
+                border-radius: 4px;
+                font-size: 1em;
+                cursor: pointer;
+            ">
+                Open in Google Maps
+            </button>
+        </a>
+        """, unsafe_allow_html=True)
+        
+        # Embedded map alternative
+        st.components.v1.iframe(
+            f"https://www.google.com/maps/embed/v1/directions?"
+            f"key={GOOGLE_MAPS_API_KEY}"
+            f"&origin=Current+Location"
+            f"&destination={parking_locations[name]['lat']},{parking_locations[name]['lng']}"
+            f"&zoom=14",
+            height=450
+        )
 
 # Main App
 def main():
