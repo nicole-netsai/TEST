@@ -4,71 +4,222 @@ import time
 from datetime import datetime
 import pandas as pd
 import plotly.express as px
+import sqlite3
+from sqlite3 import Error
+
+# Database Setup
+def create_connection():
+    """Create a database connection"""
+    conn = None
+    try:
+        conn = sqlite3.connect('parking.db')
+        return conn
+    except Error as e:
+        st.error(f"Database connection error: {e}")
+    return conn
+
+def initialize_database():
+    """Initialize database tables"""
+    conn = create_connection()
+    if conn is not None:
+        try:
+            c = conn.cursor()
+            # Create parking_lots table
+            c.execute('''
+                CREATE TABLE IF NOT EXISTS parking_lots (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    capacity INTEGER NOT NULL,
+                    rate TEXT NOT NULL,
+                    location TEXT NOT NULL,
+                    latitude REAL NOT NULL,
+                    longitude REAL NOT NULL,
+                    special_info TEXT
+                )
+            ''')
+            
+            # Create parking_status table
+            c.execute('''
+                CREATE TABLE IF NOT EXISTS parking_status (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    lot_id INTEGER NOT NULL,
+                    occupied INTEGER NOT NULL,
+                    last_updated TIMESTAMP NOT NULL,
+                    FOREIGN KEY (lot_id) REFERENCES parking_lots (id)
+                )
+            ''')
+            
+            # Create reservations table
+            c.execute('''
+                CREATE TABLE IF NOT EXISTS reservations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    lot_id INTEGER NOT NULL,
+                    permit_type TEXT NOT NULL,
+                    license_plate TEXT NOT NULL,
+                    arrival_time TEXT NOT NULL,
+                    reservation_time TIMESTAMP NOT NULL,
+                    user_id TEXT,
+                    FOREIGN KEY (lot_id) REFERENCES parking_lots (id)
+                )
+            ''')
+            conn.commit()
+        except Error as e:
+            st.error(f"Database initialization error: {e}")
+        finally:
+            conn.close()
+
+# Initialize the database
+initialize_database()
 
 # App Configuration
 st.set_page_config(
-    page_title="University of Zimbabwe Smart Parking System",
+    page_title="University Smart Parking System",
     page_icon="🚗",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# University Parking Data
-CAMPUS_PARKING = {
-    "Great Hall": {
-        "capacity": 31,
-        "rate": "0.70/hr",
-        "location": "Near Main Entrance",
-        "coords": (37.7749, -122.4194),
-        "special": "Visitor Parking/ Great Hall Candidates"
-    },
-    "Faculty of Science": {
-        "capacity": 200,
-        "rate": "1.00/hr",
-        "location": "MLT and SLT Buildings",
-        "coords": (37.7755, -122.4180),
-        "special": "Reserved for Students and Lecturers"
-    },
-    "Student Union Lot": {
-        "capacity": 40,
-        "rate": "1.00/hr",
-        "location": "Next to Student Center",
-        "coords": (37.7735, -122.4210),
-        "special": "Student Permits"
-    },
-    "Athletics Field Parking": {
-        "capacity": 150,
-        "rate": "1.50/hr",
-        "location": "Near Sports Complex",
-        "coords": (37.7760, -122.4200),
-        "special": "Event Parking"
-    }
-}
+# Database Operations
+def get_parking_lots():
+    """Get all parking lots from database"""
+    conn = create_connection()
+    if conn is not None:
+        try:
+            c = conn.cursor()
+            c.execute('''
+                SELECT 
+                    pl.id, pl.name, pl.capacity, pl.rate, pl.location, 
+                    pl.latitude, pl.longitude, pl.special_info,
+                    ps.occupied, ps.last_updated
+                FROM parking_lots pl
+                LEFT JOIN parking_status ps ON pl.id = ps.lot_id
+                ORDER BY pl.name
+            ''')
+            rows = c.fetchall()
+            return [{
+                'id': row[0],
+                'name': row[1],
+                'capacity': row[2],
+                'rate': row[3],
+                'location': row[4],
+                'coords': (row[5], row[6]),
+                'special': row[7],
+                'occupied': row[8] if row[8] is not None else 0,
+                'last_updated': row[9] if row[9] is not None else datetime.now()
+            } for row in rows]
+        except Error as e:
+            st.error(f"Error fetching parking lots: {e}")
+            return []
+        finally:
+            conn.close()
+    return []
 
-# Initialize Session State
-if 'parking_data' not in st.session_state:
-    st.session_state.parking_data = {
-        name: {
-            "occupied": random.randint(int(info["capacity"]*0.4), int(info["capacity"]*0.8)),
-            "last_updated": datetime.now(),
-            "reservations": []
-        } 
-        for name, info in CAMPUS_PARKING.items()
-    }
+def update_parking_status(lot_id, occupied):
+    """Update parking status in database"""
+    conn = create_connection()
+    if conn is not None:
+        try:
+            c = conn.cursor()
+            # Check if record exists
+            c.execute('SELECT id FROM parking_status WHERE lot_id = ?', (lot_id,))
+            if c.fetchone():
+                c.execute('''
+                    UPDATE parking_status 
+                    SET occupied = ?, last_updated = ?
+                    WHERE lot_id = ?
+                ''', (occupied, datetime.now(), lot_id))
+            else:
+                c.execute('''
+                    INSERT INTO parking_status (lot_id, occupied, last_updated)
+                    VALUES (?, ?, ?)
+                ''', (lot_id, occupied, datetime.now()))
+            conn.commit()
+            return True
+        except Error as e:
+            st.error(f"Error updating parking status: {e}")
+            return False
+        finally:
+            conn.close()
+    return False
 
-# UI Components
+def add_reservation(lot_id, permit_type, license_plate, arrival_time, user_id="guest"):
+    """Add a new reservation to database"""
+    conn = create_connection()
+    if conn is not None:
+        try:
+            c = conn.cursor()
+            c.execute('''
+                INSERT INTO reservations 
+                (lot_id, permit_type, license_plate, arrival_time, reservation_time, user_id)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (lot_id, permit_type, license_plate, arrival_time, datetime.now(), user_id))
+            
+            # Update occupied count
+            c.execute('''
+                UPDATE parking_status 
+                SET occupied = occupied + 1 
+                WHERE lot_id = ?
+            ''', (lot_id,))
+            
+            conn.commit()
+            return True
+        except Error as e:
+            st.error(f"Error creating reservation: {e}")
+            return False
+        finally:
+            conn.close()
+    return False
+
+# Initialize sample data if database is empty
+def initialize_sample_data():
+    """Insert sample data if database is empty"""
+    conn = create_connection()
+    if conn is not None:
+        try:
+            c = conn.cursor()
+            c.execute('SELECT COUNT(*) FROM parking_lots')
+            if c.fetchone()[0] == 0:
+                sample_lots = [
+                    ("Great Hall", 31, "0.70/hr", "Near Main Entrance", 37.7749, -122.4194, "Visitor Parking"),
+                    ("Faculty of Science", 200, "1.00/hr", "MLT and SLT Buildings", 37.7755, -122.4180, "Students/Lecturers"),
+                    ("Student Union Lot", 40, "1.00/hr", "Next to Student Center", 37.7735, -122.4210, "Student Permits"),
+                    ("Athletics Field Parking", 150, "1.50/hr", "Near Sports Complex", 37.7760, -122.4200, "Event Parking")
+                ]
+                c.executemany('''
+                    INSERT INTO parking_lots 
+                    (name, capacity, rate, location, latitude, longitude, special_info)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                ''', sample_lots)
+                
+                # Initialize random occupied counts
+                c.execute('SELECT id FROM parking_lots')
+                for lot_id in c.fetchall():
+                    occupied = random.randint(int(lot_id[0]*10), int(lot_id[0]*20))
+                    update_parking_status(lot_id[0], occupied)
+                
+                conn.commit()
+        except Error as e:
+            st.error(f"Error initializing sample data: {e}")
+        finally:
+            conn.close()
+
+# Initialize sample data if needed
+initialize_sample_data()
+
+# UI Components (updated to use database)
 def show_parking_map():
     """Interactive campus parking map"""
+    parking_data = get_parking_lots()
     map_data = []
-    for name, info in CAMPUS_PARKING.items():
-        available = info["capacity"] - st.session_state.parking_data[name]["occupied"]
+    for lot in parking_data:
+        available = lot['capacity'] - lot['occupied']
         map_data.append({
-            "Lot": name,
-            "Latitude": info["coords"][0],
-            "Longitude": info["coords"][1],
+            "Lot": lot['name'],
+            "Latitude": lot['coords'][0],
+            "Longitude": lot['coords'][1],
             "Available": available,
-            "Capacity": info["capacity"],
-            "Rate": info["rate"],
+            "Capacity": lot['capacity'],
+            "Rate": lot['rate'],
             "Status": "🟢 Good" if available > 20 else "🟡 Limited" if available > 0 else "🔴 Full"
         })
     
@@ -87,22 +238,21 @@ def show_parking_map():
     fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
     st.plotly_chart(fig, use_container_width=True)
 
-def parking_lot_card(name, info):
+def parking_lot_card(lot):
     """UI card for each parking lot"""
-    occupied = st.session_state.parking_data[name]["occupied"]
-    available = info["capacity"] - occupied
+    available = lot['capacity'] - lot['occupied']
     
     with st.container(border=True):
         col1, col2 = st.columns([3, 1])
         with col1:
-            st.subheader(name)
-            st.caption(f"📍 {info['location']}")
-            st.caption(f"🎯 {info['special']}")
+            st.subheader(lot['name'])
+            st.caption(f"📍 {lot['location']}")
+            st.caption(f"🎯 {lot['special']}")
         with col2:
-            st.metric("Available", f"{available}/{info['capacity']}")
+            st.metric("Available", f"{available}/{lot['capacity']}")
         
         # Visual indicators
-        progress_val = available/info["capacity"]
+        progress_val = available/lot['capacity']
         if progress_val > 0.3:
             st.progress(progress_val, f"{int(progress_val*100)}% available")
         else:
@@ -111,51 +261,39 @@ def parking_lot_card(name, info):
         # Action buttons
         btn_col1, btn_col2 = st.columns(2)
         with btn_col1:
-            if st.button("🔍 View Details", key=f"view_{name}"):
-                st.session_state.selected_lot = name
+            if st.button("🔍 View Details", key=f"view_{lot['id']}"):
+                st.session_state.selected_lot = lot
                 st.session_state.current_view = "detail"
                 
                 # Show detailed information
                 with st.container():
-                    st.subheader(f"Parking Lot: {name}")
+                    st.subheader(f"Parking Lot: {lot['name']}")
                     
                     # Display status with color coding
-                    status = "Vacant" if random.random() > 0.5 else "Occupied"
+                    status = "Vacant" if available > 0 else "Occupied"
                     status_color = "green" if status == "Vacant" else "red"
                     st.markdown(f"**Status:** <span style='color:{status_color}'>{status}</span>", 
                                unsafe_allow_html=True)
                     
                     # Display location details
-                    st.write(f"**Location:** {info['location']}")
+                    st.write(f"**Location:** {lot['location']}")
                     
                     # Estimated time calculation
                     st.subheader("Estimated Travel Time")
                     current_location = st.text_input("Enter your current location:", 
-                                                   "Current Campus Building")
+                                                   "Current Campus Building", key=f"loc_{lot['id']}")
                     
-                    if st.button("Calculate Travel Time"):
+                    if st.button("Calculate Travel Time", key=f"time_{lot['id']}"):
                         # In a real implementation, you would use Google Maps API
-                        # Here's a mock implementation
                         travel_time = random.randint(5, 15)
                         st.success(f"Estimated driving time: {travel_time} minutes")
-                        
-                        # Display route visualization (mock)
-                        st.image("https://maps.googleapis.com/maps/api/staticmap?" +
-                               f"center={info['coords'][0]},{info['coords'][1]}" +
-                               "&zoom=15&size=600x300&maptype=roadmap" +
-                               "&markers=color:red%7C{current_location}" +
-                               f"&markers=color:green%7C{info['coords'][0]},{info['coords'][1]}" +
-                               "&path=color:0x0000ff80|weight:5" +
-                               f"|{current_location}|{info['coords'][0]},{info['coords'][1]}" +
-                               "&key=YOUR_API_KEY",
-                               caption="Suggested Route")
 
         with btn_col2:
-            if st.button("🗺️ Get Directions", key=f"dir_{name}"):
+            if st.button("🗺️ Get Directions", key=f"dir_{lot['id']}"):
                 # Generate Google Maps directions URL
                 directions_url = (f"https://www.google.com/maps/dir/?api=1"
                                 f"&origin=Current+Location"
-                                f"&destination={info['coords'][0]},{info['coords'][1]}"
+                                f"&destination={lot['coords'][0]},{lot['coords'][1]}"
                                 f"&travelmode=driving")
                 
                 # Open in new tab
@@ -174,16 +312,6 @@ def parking_lot_card(name, info):
                     </button>
                 </a>
                 """, unsafe_allow_html=True)
-                
-                # Embedded map alternative
-                st.components.v1.iframe(
-                    f"https://www.google.com/maps/embed/v1/directions?"
-                    f"key=YOUR_API_KEY"
-                    f"&origin=Current+Location"
-                    f"&destination={info['coords'][0]},{info['coords'][1]}"
-                    f"&zoom=14",
-                    height=450
-                )
 
 # Main App
 def main():
@@ -225,78 +353,66 @@ def main():
         st.caption(f"Last Updated: {datetime.now().strftime('%m/%d %I:%M %p')}")
 
     # Main Content Area
+    parking_lots = get_parking_lots()
+    
     if current_view == view_options["map"]:
         st.header("Campus Parking Map")
         show_parking_map()
         
-        if st.session_state.get("show_directions"):
-            lot = st.session_state.show_directions
-            st.info(f"Directions to {lot}: {CAMPUS_PARKING[lot]['location']}")
-            # Embedded Google Maps would go here
-            st.map(pd.DataFrame({
-                "lat": [CAMPUS_PARKING[lot]["coords"][0]],
-                "lon": [CAMPUS_PARKING[lot]["coords"][1]]
-            }), zoom=16)
-            
-            if st.button("Close Directions"):
-                st.session_state.show_directions = None
-                st.rerun()
-
     elif current_view == view_options["list"]:
         st.header("All Parking Facilities")
         
         search = st.text_input("Search parking lots", key="parking_search")
         
-        filtered_lots = {
-            name: info for name, info in CAMPUS_PARKING.items() 
-            if search.lower() in name.lower() or search.lower() in info["location"].lower()
-        }
+        filtered_lots = [
+            lot for lot in parking_lots 
+            if search.lower() in lot['name'].lower() or search.lower() in lot['location'].lower()
+        ]
         
-        for name, info in filtered_lots.items():
-            parking_lot_card(name, info)
+        for lot in filtered_lots:
+            parking_lot_card(lot)
 
     elif current_view == view_options["reserve"]:
         st.header("Reserve Parking Spot")
         
-        selected = st.selectbox(
+        selected_lot = st.selectbox(
             "Select parking lot",
-            options=list(CAMPUS_PARKING.keys()),
+            options=parking_lots,
+            format_func=lambda x: x['name'],
             index=0,
             key="reserve_lot"
         )
         
-        info = CAMPUS_PARKING[selected]
-        occupied = st.session_state.parking_data[selected]["occupied"]
-        available = info["capacity"] - occupied
+        available = selected_lot['capacity'] - selected_lot['occupied']
         
         col1, col2 = st.columns(2)
         with col1:
-            st.subheader(selected)
-            st.image("https://via.placeholder.com/500x300?text=Lot+"+selected.replace(" ", "+"), 
+            st.subheader(selected_lot['name'])
+            st.image("https://via.placeholder.com/500x300?text=Lot+"+selected_lot['name'].replace(" ", "+"), 
                     use_column_width=True)
         with col2:
             st.metric("Available Spots", available)
-            st.caption(f"Total Capacity: {info['capacity']}")
-            st.write(f"**Rate:** {info['rate']}")
-            st.write(f"**Location:** {info['location']}")
-            st.write(f"**Special:** {info['special']}")
+            st.caption(f"Total Capacity: {selected_lot['capacity']}")
+            st.write(f"**Rate:** {selected_lot['rate']}")
+            st.write(f"**Location:** {selected_lot['location']}")
+            st.write(f"**Special:** {selected_lot['special']}")
             
             if available > 0:
                 with st.form(key="reservation_form"):
-                    st.selectbox("Permit Type", ["Student", "Faculty", "Visitor", "Event"])
-                    st.text_input("Vehicle License Plate")
-                    st.time_input("Estimated Arrival Time")
+                    permit_type = st.selectbox("Permit Type", ["Student", "Faculty", "Visitor", "Event"])
+                    license_plate = st.text_input("Vehicle License Plate")
+                    arrival_time = st.time_input("Estimated Arrival Time")
                     
                     if st.form_submit_button("Reserve Spot", type="primary"):
-                        st.session_state.parking_data[selected]["occupied"] += 1
-                        st.session_state.parking_data[selected]["reservations"].append({
-                            "time": datetime.now(),
-                            "plate": "ABC123",  # Would come from form
-                            "user": "Current User"  # Would be authenticated user
-                        })
-                        st.success("Reservation confirmed!")
-                        time.sleep(1)
-                        st.rerun()
+                        if add_reservation(
+                            selected_lot['id'],
+                            permit_type,
+                            license_plate,
+                            arrival_time.strftime("%H:%M")
+                        ):
+                            st.success("Reservation confirmed!")
+                            time.sleep(1)
+                            st.rerun()
             else:
                 st.error("No available spots in this lot")
 
@@ -316,35 +432,33 @@ def main():
         with tab1:
             st.subheader("Manage Parking Lots")
             
-            for name, info in CAMPUS_PARKING.items():
-                with st.expander(name):
-                    current = st.session_state.parking_data[name]["occupied"]
-                    new_val = st.number_input(
+            for lot in parking_lots:
+                with st.expander(lot['name']):
+                    new_occupied = st.number_input(
                         "Occupied spots",
                         min_value=0,
-                        max_value=info["capacity"],
-                        value=current,
-                        key=f"admin_{name}"
+                        max_value=lot['capacity'],
+                        value=lot['occupied'],
+                        key=f"admin_{lot['id']}"
                     )
                     
-                    if st.button(f"Update {name}", key=f"update_{name}"):
-                        st.session_state.parking_data[name]["occupied"] = new_val
-                        st.session_state.parking_data[name]["last_updated"] = datetime.now()
-                        st.success("Updated successfully!")
-                        time.sleep(0.5)
-                        st.rerun()
+                    if st.button(f"Update {lot['name']}", key=f"update_{lot['id']}"):
+                        if update_parking_status(lot['id'], new_occupied):
+                            st.success("Updated successfully!")
+                            time.sleep(0.5)
+                            st.rerun()
         
         with tab2:
             st.subheader("Parking Analytics")
             
-            # Sample data visualization
+            # Data visualization
             data = []
-            for name, info in CAMPUS_PARKING.items():
+            for lot in parking_lots:
                 data.append({
-                    "Lot": name,
-                    "Capacity": info["capacity"],
-                    "Occupied": st.session_state.parking_data[name]["occupied"],
-                    "Utilization": st.session_state.parking_data[name]["occupied"] / info["capacity"] * 100
+                    "Lot": lot['name'],
+                    "Capacity": lot['capacity'],
+                    "Occupied": lot['occupied'],
+                    "Utilization": lot['occupied'] / lot['capacity'] * 100
                 })
             
             df = pd.DataFrame(data)
@@ -353,8 +467,9 @@ def main():
             with col1:
                 st.bar_chart(df, x="Lot", y=["Capacity", "Occupied"])
             with col2:
-                st.metric("Total Campus Capacity", sum(info["capacity"] for info in CAMPUS_PARKING.values()))
-                st.metric("Current Utilization", f"{sum(data['Occupied'] for data in df)/sum(data['Capacity'] for data in df)*100:.1f}%")
+                st.metric("Total Campus Capacity", sum(lot['capacity'] for lot in parking_lots))
+                st.metric("Current Utilization", 
+                         f"{sum(lot['occupied'] for lot in parking_lots)/sum(lot['capacity'] for lot in parking_lots)*100:.1f}%")
 
     # Footer
     st.markdown("---")
